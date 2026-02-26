@@ -12,19 +12,30 @@ import { Position, RiskState, PricerResult, MarketCategory } from '../types';
 
 const STATE_FILE = path.join(__dirname, '../../data/positions.json');
 
+// ── Default state ─────────────────────────────────────────────
+const DEFAULT_STATE: RiskState = {
+  open_positions:      [],
+  daily_pnl_usdc:      0,
+  total_exposure_usdc: 0,
+  bucket_exposure:     {},
+};
+
 // ── Load/save state ───────────────────────────────────────────
 export function loadState(): RiskState {
   try {
     if (fs.existsSync(STATE_FILE)) {
-      return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+      const parsed = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+      // Merge with defaults so partial/empty objects never crash
+      return {
+        ...DEFAULT_STATE,
+        ...parsed,
+        open_positions:  Array.isArray(parsed.open_positions)  ? parsed.open_positions  : [],
+        bucket_exposure: parsed.bucket_exposure && typeof parsed.bucket_exposure === 'object'
+          ? parsed.bucket_exposure : {},
+      };
     }
   } catch { /* ignore */ }
-  return {
-    open_positions:      [],
-    daily_pnl_usdc:      0,
-    total_exposure_usdc: 0,
-    bucket_exposure:     {},
-  };
+  return { ...DEFAULT_STATE };
 }
 
 export function saveState(state: RiskState): void {
