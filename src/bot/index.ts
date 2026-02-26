@@ -33,7 +33,11 @@ function shouldAutoExecute(result: PricerResult, sizeUsdc: number): boolean {
 
 // ── Process a single market opportunity ───────────────────────
 async function processMarket(market: PolymarketMarket): Promise<void> {
-  console.log(`\n🔎 Pricing: "${market.question.slice(0, 70)}"`);
+  if (market.category === 'weather') {
+    console.log(`\n🌤️  [WEATHER] "${market.question.slice(0, 70)}"`);
+  } else {
+    console.log(`\n🔎 Pricing: "${market.question.slice(0, 70)}"`);
+  }
 
   const result = await priceMarket(market);
   if (!result) return;
@@ -99,14 +103,17 @@ async function main(): Promise<void> {
 
       const markets = await scanMarkets();
 
-      // Only process categories with working pricers
-      const PRICEABLE = new Set(['weather', 'crypto_binary', 'correlated', 'sponsored']);
-      const priceable = markets
-        .filter(m => PRICEABLE.has(m.category))
-        .sort((a, b) => b.volume - a.volume)
-        .slice(0, 200);  // hard cap: max 200 markets per scan
+      // Split by category — weather always runs in full, others capped
+      const weather    = markets.filter(m => m.category === 'weather');
+      const arb        = markets.filter(m => ['crypto_binary', 'correlated'].includes(m.category))
+                                .sort((a, b) => b.volume - a.volume)
+                                .slice(0, 100);
+      const sponsored  = markets.filter(m => m.category === 'sponsored')
+                                .sort((a, b) => (b.rewards_daily_rate ?? 0) - (a.rewards_daily_rate ?? 0))
+                                .slice(0, 50);
+      const priceable  = [...weather, ...arb, ...sponsored];
 
-      console.log(`📋 ${markets.length} markets scanned → ${priceable.length} priceable (weather/arb/sponsored)`);
+      console.log(`📋 ${markets.length} total → pricing ${weather.length} weather + ${arb.length} arb + ${sponsored.length} sponsored`);
 
       for (const market of priceable) {
         if (!running) break;
