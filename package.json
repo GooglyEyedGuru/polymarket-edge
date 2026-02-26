@@ -11,12 +11,13 @@
     "dev": "npx ts-node src/bot/index.ts"
   },
   "dependencies": {
-    "@polymarket/clob-client": "^4.4.0",
+    "@polymarket/clob-client": "^5.2.4",
     "axios": "^1.6.0",
     "dotenv": "^16.3.1",
     "ethers": "^6.9.0",
     "graphql-request": "^6.1.0",
-    "node-cron": "^3.0.3"
+    "node-cron": "^3.0.3",
+    "socks-proxy-agent": "^8.0.5"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
