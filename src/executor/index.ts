@@ -7,7 +7,11 @@ import { ClobClient, ApiKeyCreds, Chain, Side, OrderType } from '@polymarket/clo
 import { POLY_API_KEY, POLY_API_SECRET, POLY_API_PASSPHRASE, POLY_WALLET_KEY } from '../config';
 import { PricerResult, Position } from '../types';
 
-const CLOB_HOST = 'https://clob.polymarket.com';
+const CLOB_HOST = process.env.CLOB_HOST || 'https://clob.polymarket.com';
+
+// Use ethers v5 (bundled inside clob-client) for wallet signing
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const ethers5 = require('../node_modules/@polymarket/clob-client/node_modules/ethers');
 
 // ── Build authenticated CLOB client ──────────────────────────
 function buildClient(): ClobClient {
@@ -15,13 +19,17 @@ function buildClient(): ClobClient {
     throw new Error('POLYMARKET_WALLET_PRIVATE_KEY not set — cannot execute trades');
   }
 
+  const key    = POLY_WALLET_KEY.startsWith('0x') ? POLY_WALLET_KEY : `0x${POLY_WALLET_KEY}`;
+  const wallet = new ethers5.Wallet(key);
+
   const creds: ApiKeyCreds = {
     key:        POLY_API_KEY,
     secret:     POLY_API_SECRET,
     passphrase: POLY_API_PASSPHRASE,
   };
 
-  return new ClobClient(CLOB_HOST, Chain.POLYGON, undefined, creds);
+  // signatureType=0 = EOA (direct MetaMask/hardware wallet, no proxy)
+  return new ClobClient(CLOB_HOST, Chain.POLYGON, wallet, creds, 0);
 }
 
 // ── Get token ID for the desired side ────────────────────────
