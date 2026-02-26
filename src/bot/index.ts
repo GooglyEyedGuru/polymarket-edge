@@ -14,6 +14,7 @@ import { checkRisk, loadState, recordOpen, printRiskSummary } from '../risk';
 import { placeOrder } from '../executor';
 import { sendTradeAlert, sendExecutionConfirm, sendMessage } from '../alerts/telegram';
 import { Position, PolymarketMarket, PricerResult } from '../types';
+import { startControlServer } from '../control';
 
 let running = true;
 process.on('SIGINT',  () => { running = false; console.log('\n👋 Shutting down...'); });
@@ -85,6 +86,9 @@ async function main(): Promise<void> {
   console.log('='.repeat(60));
   printConfig();
   console.log('');
+
+  // Start control server for start/stop commands
+  startControlServer(() => { running = false; });
 
   await sendMessage('🎯 PolymarketEdge bot started');
 
