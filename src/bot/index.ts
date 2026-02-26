@@ -99,13 +99,19 @@ async function main(): Promise<void> {
 
       const markets = await scanMarkets();
 
-      // Price each market (highest volume first)
-      const sorted = markets.sort((a, b) => b.volume - a.volume);
+      // Only process categories with working pricers
+      const PRICEABLE = new Set(['weather', 'crypto_binary', 'correlated', 'sponsored']);
+      const priceable = markets
+        .filter(m => PRICEABLE.has(m.category))
+        .sort((a, b) => b.volume - a.volume)
+        .slice(0, 200);  // hard cap: max 200 markets per scan
 
-      for (const market of sorted) {
+      console.log(`📋 ${markets.length} markets scanned → ${priceable.length} priceable (weather/arb/sponsored)`);
+
+      for (const market of priceable) {
         if (!running) break;
         await processMarket(market);
-        await sleep(500);  // gentle rate limit between pricer calls
+        await sleep(300);
       }
 
       console.log(`\n✅ Scan complete. Next scan in ${SCAN_INTERVAL_MINUTES} min.`);
