@@ -11,7 +11,8 @@ const CLOB_HOST = process.env.CLOB_HOST || 'https://clob.polymarket.com';
 
 // Use ethers v5 (bundled inside clob-client) for wallet signing
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const ethers5 = require('../node_modules/@polymarket/clob-client/node_modules/ethers');
+import path from 'path';
+const ethers5 = require(path.join(process.cwd(), 'node_modules/@polymarket/clob-client/node_modules/ethers'));
 
 // ── Build authenticated CLOB client ──────────────────────────
 function buildClient(): ClobClient {
