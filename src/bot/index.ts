@@ -15,10 +15,11 @@ import { placeOrder } from '../executor';
 import { sendTradeAlert, sendExecutionConfirm, sendMessage } from '../alerts/telegram';
 import { Position, PolymarketMarket, PricerResult } from '../types';
 import { startControlServer } from '../control';
+import { queueTrade, startApprovalPoller, stopApprovalPoller } from '../approvals';
 
 let running = true;
-process.on('SIGINT',  () => { running = false; console.log('\n👋 Shutting down...'); });
-process.on('SIGTERM', () => { running = false; });
+process.on('SIGINT',  () => { running = false; stopApprovalPoller(); console.log('\n👋 Shutting down...'); });
+process.on('SIGTERM', () => { running = false; stopApprovalPoller(); });
 
 function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 
@@ -79,7 +80,8 @@ async function processMarket(market: PolymarketMarket): Promise<void> {
       await sendExecutionConfirm(result, market, sizeUsdc, order.txHash);
     }
   } else {
-    console.log(`   📱 Sending for approval (edge ${result.edge_percent.toFixed(1)}% | conf ${result.confidence})`);
+    console.log(`   📱 Queuing for approval (edge ${result.edge_percent.toFixed(1)}% | conf ${result.confidence})`);
+    queueTrade(result, market, sizeUsdc);
     await sendTradeAlert(result, market, sizeUsdc);
   }
 }
@@ -91,10 +93,11 @@ async function main(): Promise<void> {
   printConfig();
   console.log('');
 
-  // Start control server for start/stop commands
-  startControlServer(() => { running = false; });
+  // Start control server + approval poller
+  startControlServer(() => { running = false; stopApprovalPoller(); });
+  startApprovalPoller();
 
-  await sendMessage('🎯 PolymarketEdge bot started');
+  await sendMessage('🎯 PolymarketEdge bot started — reply <code>pending</code> to see queued trades');
 
   while (running) {
     try {
