@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+*.pid
+*.lock
+data/positions.json
+data/trades.json
+bot.log

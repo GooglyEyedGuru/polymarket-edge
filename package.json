@@ -1,0 +1,27 @@
+{
+  "name": "polymarket-edge",
+  "version": "0.1.0",
+  "description": "Smart-capital Polymarket bot — wins by being right, not fast",
+  "private": true,
+  "scripts": {
+    "start": "bash scripts/start.sh",
+    "stop": "bash scripts/stop.sh",
+    "status": "bash scripts/status.sh",
+    "scan": "npx ts-node src/scanner/run.ts",
+    "dev": "npx ts-node src/bot/index.ts"
+  },
+  "dependencies": {
+    "@polymarket/clob-client": "^4.4.0",
+    "axios": "^1.6.0",
+    "dotenv": "^16.3.1",
+    "ethers": "^6.9.0",
+    "graphql-request": "^6.1.0",
+    "node-cron": "^3.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/node-cron": "^3.0.11",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}
