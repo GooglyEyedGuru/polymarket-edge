@@ -16,7 +16,7 @@ const WALLET_CACHE_MS = 4 * 60 * 60 * 1000;  // refresh every 4h
 
 // ── Get / refresh smart money wallet list ─────────────────────
 export async function getSmartWallets(): Promise<WalletStats[]> {
-  if (Date.now() - lastWalletFetch < WALLET_CACHE_MS && cachedWallets.length > 0) {
+  if (lastWalletFetch > 0 && Date.now() - lastWalletFetch < WALLET_CACHE_MS) {
     return cachedWallets;
   }
 
