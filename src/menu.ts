@@ -53,12 +53,25 @@ async function getClobBalance(): Promise<number> {
   } catch { return -1; }
 }
 
-// ── Look up current price for a position ─────────────────────
+// ── Look up current price via Gamma (accurate, not CLOB mid) ─
+// Gamma's outcomePrices are the real market prices — CLOB mid is
+// misleading on illiquid markets (bid=1¢ ask=99¢ → mid=50¢ fake).
 async function resolvePrice(pos: Position): Promise<number | null> {
-  if (pos.token_id) return getMarketPrice(pos.token_id);
-
-  // Fallback: look up from Gamma using condition_id
   try {
+    // Primary: look up by token_id via Gamma
+    if (pos.token_id) {
+      const r = await axios.get('https://gamma-api.polymarket.com/markets', {
+        params: { clob_token_ids: pos.token_id }, timeout: 8_000,
+      });
+      const m = r.data?.[0];
+      if (m) {
+        const tokens   = JSON.parse(m.clobTokenIds  || '[]');
+        const prices   = JSON.parse(m.outcomePrices || '[]');
+        const idx      = tokens.indexOf(pos.token_id);
+        if (idx >= 0) return Number(prices[idx]);
+      }
+    }
+    // Fallback: look up by condition_id
     const r = await axios.get('https://gamma-api.polymarket.com/markets', {
       params: { conditionId: pos.market_id }, timeout: 8_000,
     });
@@ -101,8 +114,21 @@ export async function buildMenuPayload(): Promise<{
         nowStr     = `${(now * 100).toFixed(0)}¢`;
       }
 
+      // Also get best bid (what we'd actually receive on a sell)
+      let bidStr = '';
+      if (pos.token_id) {
+        try {
+          const book   = await getMarketPrice(pos.token_id);  // reuse for bid approximation
+          const bidRes = await axios.get('https://clob.polymarket.com/book', {
+            params: { token_id: pos.token_id }, timeout: 5_000,
+          });
+          const bestBid = bidRes.data?.bids?.[0]?.price;
+          if (bestBid) bidStr = ` | Sell: ${(Number(bestBid)*100).toFixed(0)}¢`;
+        } catch {}
+      }
+
       text += `<b>${i + 1}. ${pos.question.slice(0, 58)}</b>\n`;
-      text += `   ${pos.side} | Entry: ${(pos.entry_price * 100).toFixed(0)}¢ → Now: ${nowStr}\n`;
+      text += `   ${pos.side} | Entry: ${(pos.entry_price * 100).toFixed(0)}¢ | Mid: ${nowStr}${bidStr}\n`;
       text += `   Shares: ${shares.toFixed(1)} | Cost: $${pos.size_usdc.toFixed(2)} | ${pnlStr}\n\n`;
 
       keyboard.push([
