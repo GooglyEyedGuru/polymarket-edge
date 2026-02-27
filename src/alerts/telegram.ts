@@ -84,6 +84,31 @@ export async function sendExecutionConfirm(
   await sendMessage(msg);
 }
 
+// ── Send exit/sell confirmation ───────────────────────────────
+export async function sendExitAlert(
+  question:   string,
+  side:       string,
+  entryPrice: number,
+  exitPrice:  number,
+  shares:     number,
+  pnlUsdc:    number,
+  reason:     string,
+): Promise<void> {
+  const pnlEmoji = pnlUsdc >= 0 ? '💰' : '🔴';
+  const roi      = ((exitPrice - entryPrice) / entryPrice * 100).toFixed(0);
+  const msg = [
+    `${pnlEmoji} <b>POSITION SOLD</b>`,
+    ``,
+    `<b>Market:</b> ${question.slice(0, 80)}`,
+    `<b>Side:</b> ${side}`,
+    `<b>Entry:</b> ${(entryPrice * 100).toFixed(1)}¢ → <b>Exit:</b> ${(exitPrice * 100).toFixed(1)}¢`,
+    `<b>Shares:</b> ${shares.toFixed(1)} | <b>ROI:</b> ${roi}%`,
+    `${pnlEmoji} <b>PnL: ${pnlUsdc >= 0 ? '+' : ''}$${pnlUsdc.toFixed(2)} USDC</b>`,
+    `<b>Reason:</b> ${reason}`,
+  ].join('\n');
+  await sendMessage(msg);
+}
+
 // ── Send error/warning alert ──────────────────────────────────
 export async function sendAlert(text: string): Promise<void> {
   await sendMessage(`⚠️ ${text}`);

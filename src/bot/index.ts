@@ -6,13 +6,15 @@
 import 'dotenv/config';
 import {
   SCAN_INTERVAL_MINUTES, AUTO_EXECUTE_EDGE_PCT,
-  AUTO_EXECUTE_CONFIDENCE, AUTO_EXECUTE_MAX_USDC, printConfig,
+  AUTO_EXECUTE_CONFIDENCE, AUTO_EXECUTE_MAX_USDC,
+  EXIT_PROFIT_THRESHOLD, EXIT_STOP_LOSS_FRAC,
+  printConfig,
 } from '../config';
 import { scanMarkets } from '../scanner';
 import { priceMarket } from '../pricer';
-import { checkRisk, loadState, recordOpen, printRiskSummary } from '../risk';
-import { placeOrder } from '../executor';
-import { sendTradeAlert, sendExecutionConfirm, sendMessage } from '../alerts/telegram';
+import { checkRisk, loadState, recordOpen, recordClose, printRiskSummary } from '../risk';
+import { placeOrder, sellPosition, getTokenIdFromMarket, getMarketPrice } from '../executor';
+import { sendTradeAlert, sendExecutionConfirm, sendExitAlert, sendMessage } from '../alerts/telegram';
 import { Position, PolymarketMarket, PricerResult } from '../types';
 import { startControlServer } from '../control';
 import { queueTrade, startApprovalPoller, stopApprovalPoller } from '../approvals';
@@ -30,6 +32,56 @@ function shouldAutoExecute(result: PricerResult, sizeUsdc: number): boolean {
     result.confidence   >= AUTO_EXECUTE_CONFIDENCE &&
     sizeUsdc            <= AUTO_EXECUTE_MAX_USDC
   );
+}
+
+// ── Check open positions for exit triggers ────────────────────
+async function checkExits(): Promise<void> {
+  const state = loadState();
+  const open  = state.open_positions.filter(p => p.status === 'open' && p.token_id);
+  if (!open.length) return;
+
+  console.log(`\n🔍 Checking ${open.length} open position(s) for exit signals...`);
+
+  for (const pos of open) {
+    if (!pos.token_id) continue;
+
+    const currentPrice = await getMarketPrice(pos.token_id);
+    if (currentPrice === null) continue;
+
+    const pnlPct       = ((currentPrice - pos.entry_price) / pos.entry_price * 100).toFixed(1);
+    const overFair     = currentPrice - pos.fair_prob;
+    const isStopLoss   = currentPrice < pos.entry_price * EXIT_STOP_LOSS_FRAC;
+    const isTakeProfit = overFair > EXIT_PROFIT_THRESHOLD;
+
+    console.log(`   📍 ${pos.question.slice(0, 50)} | entry:${(pos.entry_price*100).toFixed(0)}¢ now:${(currentPrice*100).toFixed(0)}¢ fair:${(pos.fair_prob*100).toFixed(0)}¢ (${pnlPct}%)`);
+
+    if (!isTakeProfit && !isStopLoss) continue;
+
+    const reason = isTakeProfit
+      ? `Market ${(currentPrice*100).toFixed(0)}¢ exceeds fair ${(pos.fair_prob*100).toFixed(0)}¢ by >${(EXIT_PROFIT_THRESHOLD*100).toFixed(0)}pp — edge reversed`
+      : `Price dropped to ${(currentPrice*100).toFixed(0)}¢ (<${(EXIT_STOP_LOSS_FRAC*100).toFixed(0)}% of entry) — stop-loss`;
+
+    console.log(`   🚨 ${isTakeProfit ? 'TAKE PROFIT' : 'STOP LOSS'}: ${reason}`);
+
+    const result = await sellPosition(pos.token_id, pos.shares, currentPrice * 0.9);
+    if (!result) continue;
+
+    const pnlUsdc = (result.price - pos.entry_price) * pos.shares;
+    const freshState = loadState();
+    recordClose(freshState, pos.id, result.price, result.orderId);
+
+    await sendExitAlert(
+      pos.question,
+      pos.side,
+      pos.entry_price,
+      result.price,
+      pos.shares,
+      pnlUsdc,
+      reason,
+    );
+
+    console.log(`   ✅ Sold ${pos.shares.toFixed(1)} shares @ ${(result.price*100).toFixed(0)}¢ | PnL: $${pnlUsdc.toFixed(2)}`);
+  }
 }
 
 // ── Process a single market opportunity ───────────────────────
@@ -61,12 +113,16 @@ async function processMarket(market: PolymarketMarket): Promise<void> {
     const order = await placeOrder(result, market, sizeUsdc);
 
     if (order) {
+      const tokenId = getTokenIdFromMarket(market, result.side as 'Yes' | 'No') ?? '';
+      const shares  = sizeUsdc / result.implied_prob;
       const position: Position = {
         id:           `${market.condition_id}-${Date.now()}`,
         market_id:    market.condition_id,
         question:     market.question,
         side:         result.side as 'Yes' | 'No',
         size_usdc:    sizeUsdc,
+        shares,
+        token_id:     tokenId,
         entry_price:  result.implied_prob,
         fair_prob:    result.fair_prob,
         edge_pct:     result.edge_percent,
@@ -103,6 +159,9 @@ async function main(): Promise<void> {
     try {
       console.log(`\n⏱️  [${new Date().toISOString()}] Starting scan...`);
       printRiskSummary(loadState());
+
+      // Check exits before scanning for new opportunities
+      await checkExits();
 
       const markets = await scanMarkets();
 

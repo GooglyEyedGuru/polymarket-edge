@@ -42,6 +42,14 @@ function getTokenId(market: any, side: 'Yes' | 'No'): string {
   return token.token_id;
 }
 
+// Exported helper for bot to grab token_id after placing order
+export function getTokenIdFromMarket(market: any, side: 'Yes' | 'No'): string | null {
+  const token = market.tokens?.find((t: any) =>
+    t.outcome.toLowerCase() === side.toLowerCase()
+  );
+  return token?.token_id ?? null;
+}
+
 // ── Place a limit order ───────────────────────────────────────
 export async function placeOrder(
   pricerResult: PricerResult,
@@ -104,4 +112,54 @@ export async function cancelOrder(orderId: string): Promise<boolean> {
     await client.cancelOrder({ orderID: orderId });
     return true;
   } catch { return false; }
+}
+
+// ── Sell a position (place limit SELL order at best bid) ──────
+export async function sellPosition(
+  tokenId:   string,
+  shares:    number,
+  minPrice:  number,   // don't sell below this (protects against stale book)
+): Promise<{ orderId: string; price: number } | null> {
+  if (!POLY_WALLET_KEY || !POLY_API_KEY) {
+    console.log('   ⚠️  No credentials — dry run (sell NOT placed)');
+    return { orderId: 'dry-run', price: minPrice };
+  }
+
+  try {
+    const client   = buildClient();
+    const book     = await client.getOrderBook(tokenId);
+    const bestBid  = book?.bids?.[0]?.price ? Number(book.bids[0].price) : null;
+
+    if (!bestBid || bestBid < minPrice) {
+      console.log(`   ⚠️  Best bid ${bestBid ? (bestBid * 100).toFixed(1) + '¢' : 'none'} is below min ${(minPrice * 100).toFixed(1)}¢ — skipping sell`);
+      return null;
+    }
+
+    // Sell at best bid — price rounded to 2 decimal places (CLOB requirement)
+    const price = Math.round(bestBid * 100) / 100;
+
+    console.log(`   📤 Placing SELL ${shares.toFixed(2)} shares @ ${(price * 100).toFixed(0)}¢`);
+
+    const orderArgs = {
+      tokenID:   tokenId,
+      price,
+      size:      shares,
+      side:      Side.SELL,
+      orderType: OrderType.GTC,
+    };
+
+    const signedOrder = await client.createOrder(orderArgs);
+    const response    = await client.postOrder(signedOrder, OrderType.GTC);
+
+    if (!response?.orderID) {
+      throw new Error(`CLOB returned no orderID: ${JSON.stringify(response)}`);
+    }
+
+    console.log(`   ✅ Sell order placed: ${response.orderID} @ ${(price * 100).toFixed(0)}¢`);
+    return { orderId: response.orderID, price };
+
+  } catch (err: any) {
+    console.error(`   ❌ Sell failed: ${err.message}`);
+    return null;
+  }
 }

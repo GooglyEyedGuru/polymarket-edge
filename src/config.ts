@@ -39,6 +39,13 @@ export const AUTO_EXECUTE_EDGE_PCT     = Number(optional('AUTO_EXECUTE_EDGE_PCT'
 export const AUTO_EXECUTE_CONFIDENCE   = Number(optional('AUTO_EXECUTE_CONFIDENCE',       '85'));
 export const AUTO_EXECUTE_MAX_SIZE_PCT = Number(optional('AUTO_EXECUTE_MAX_SIZE_PCT',     '1'));
 
+// ── Exit thresholds ──────────────────────────────────────────
+// Sell when market price exceeds our fair_prob by this many percentage points
+// e.g. 0.10 = sell if we think fair is 30% but market is now pricing at 40%+
+export const EXIT_PROFIT_THRESHOLD = Number(optional('EXIT_PROFIT_THRESHOLD', '0.10'));
+// Cut loss if market price drops to this fraction of entry (e.g. 0.35 = 65% loss)
+export const EXIT_STOP_LOSS_FRAC   = Number(optional('EXIT_STOP_LOSS_FRAC',   '0.35'));
+
 // ── Scan config ──────────────────────────────────────────────
 export const SCAN_INTERVAL_MINUTES = Number(optional('SCAN_INTERVAL_MINUTES', '10'));
 export const MIN_MARKET_VOLUME     = Number(optional('MIN_MARKET_VOLUME',     '10000'));

@@ -71,6 +71,8 @@ export interface Position {
   question:       string;
   side:           'Yes' | 'No';
   size_usdc:      number;
+  shares:         number;   // outcome tokens held (size_usdc / entry_price)
+  token_id:       string;   // CLOB token ID — needed for sell orders
   entry_price:    number;
   fair_prob:      number;
   edge_pct:       number;
