@@ -33,6 +33,7 @@ export const MAX_CONCURRENT_POSITIONS  = Number(optional('MAX_CONCURRENT_POSITIO
 
 // ── Edge thresholds ──────────────────────────────────────────
 export const MIN_EDGE_PCT              = Number(optional('MIN_EDGE_PCT',                  '7'));
+export const MIN_EDGE_WEATHER_PCT      = Number(optional('MIN_WEATHER_EDGE_PCT',          '10'));  // higher bar for weather
 export const MIN_EDGE_SPONSORED_PCT    = Number(optional('MIN_EDGE_SPONSORED_PCT',        '4'));
 export const MIN_CONFIDENCE            = Number(optional('MIN_CONFIDENCE',                '70'));
 export const AUTO_EXECUTE_EDGE_PCT     = Number(optional('AUTO_EXECUTE_EDGE_PCT',         '12'));
@@ -65,7 +66,7 @@ export function printConfig() {
   console.log(`   Max position:   $${MAX_POSITION_USDC.toFixed(2)} (${MAX_POSITION_PCT * 100}%)`);
   console.log(`   Max exposure:   $${MAX_TOTAL_EXPOSURE_USDC.toFixed(2)} (${MAX_TOTAL_EXPOSURE_PCT * 100}%)`);
   console.log(`   Daily loss cap: $${DAILY_LOSS_LIMIT_USDC.toFixed(2)} (${DAILY_LOSS_LIMIT_PCT * 100}%)`);
-  console.log(`   Min edge:       ${MIN_EDGE_PCT}% | Auto-execute: >${AUTO_EXECUTE_EDGE_PCT}% + >${AUTO_EXECUTE_CONFIDENCE}% conf`);
+  console.log(`   Min edge:       ${MIN_EDGE_PCT}% (weather: ${MIN_EDGE_WEATHER_PCT}%) | Auto-execute: >${AUTO_EXECUTE_EDGE_PCT}% + >${AUTO_EXECUTE_CONFIDENCE}% conf`);
   console.log(`   Scan interval:  every ${SCAN_INTERVAL_MINUTES} min`);
   console.log(`   Goldsky:        ${GOLDSKY_API_KEY ? '✅' : '❌ missing'}`);
   console.log(`   Polymarket:     ${POLY_API_KEY ? '✅' : '⚠️  no API key (read-only)'}`);

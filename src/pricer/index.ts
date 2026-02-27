@@ -4,7 +4,7 @@
  * (null = no edge / skip).
  */
 import {
-  MIN_EDGE_PCT, MIN_EDGE_SPONSORED_PCT, MIN_CONFIDENCE,
+  MIN_EDGE_PCT, MIN_EDGE_WEATHER_PCT, MIN_EDGE_SPONSORED_PCT, MIN_CONFIDENCE,
   BANKROLL_USDC, MAX_POSITION_PCT,
 } from '../config';
 import { PolymarketMarket, PricerResult } from '../types';
@@ -60,7 +60,9 @@ export async function priceMarket(market: PolymarketMarket): Promise<PricerResul
   }
 
   // ── Apply minimum edge / confidence filters ───────────────
-  const minEdge = market.category === 'sponsored' ? MIN_EDGE_SPONSORED_PCT : MIN_EDGE_PCT;
+  const minEdge = market.category === 'sponsored' ? MIN_EDGE_SPONSORED_PCT
+                : market.category === 'weather'   ? MIN_EDGE_WEATHER_PCT
+                : MIN_EDGE_PCT;
   if (result.edge_percent < minEdge) {
     console.log(`   ❌ Edge ${result.edge_percent.toFixed(1)}% < min ${minEdge}% — skip`);
     return null;
