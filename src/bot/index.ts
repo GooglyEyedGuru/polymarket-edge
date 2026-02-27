@@ -18,7 +18,7 @@ import { sendTradeAlert, sendExecutionConfirm, sendExitAlert, sendMessage } from
 import axios from 'axios';
 import { Position, PolymarketMarket, PricerResult } from '../types';
 import { startControlServer } from '../control';
-import { queueTrade, startApprovalPoller, stopApprovalPoller } from '../approvals';
+import { queueTrade, startApprovalPoller, stopApprovalPoller, setLastScanTime } from '../approvals';
 
 let running = true;
 process.on('SIGINT',  () => { running = false; stopApprovalPoller(); console.log('\n👋 Shutting down...'); });
@@ -236,6 +236,7 @@ async function main(): Promise<void> {
   while (running) {
     try {
       console.log(`\n⏱️  [${new Date().toISOString()}] Starting scan...`);
+      setLastScanTime(Date.now());
       printRiskSummary(loadState());
 
       // Check exits before scanning for new opportunities
