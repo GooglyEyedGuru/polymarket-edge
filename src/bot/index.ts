@@ -52,6 +52,29 @@ async function resolveTokenId(pos: Position): Promise<string | null> {
   } catch { return null; }
 }
 
+// ── Check Gamma for resolved outcome ─────────────────────────
+async function checkResolution(pos: Position): Promise<{ resolved: boolean; won: boolean; exitPrice: number }> {
+  try {
+    const r = await axios.get('https://gamma-api.polymarket.com/markets', {
+      params: { conditionId: pos.market_id },
+      timeout: 8_000,
+    });
+    const m = r.data?.[0];
+    if (!m) return { resolved: false, won: false, exitPrice: 0 };
+
+    const resolved   = !!m.resolved || !!m.closed;
+    const outcomes   = JSON.parse(m.outcomes     || '[]');
+    const tokenIds   = JSON.parse(m.clobTokenIds || '[]');
+    const prices     = JSON.parse(m.outcomePrices || '[]');
+    const idx        = outcomes.findIndex((o: string) => o.toLowerCase() === pos.side.toLowerCase());
+    const exitPrice  = idx >= 0 ? Number(prices[idx] ?? 0) : 0;
+    const won        = exitPrice >= 0.99;   // resolved Yes = price snaps to 1.0
+    return { resolved, won, exitPrice };
+  } catch {
+    return { resolved: false, won: false, exitPrice: 0 };
+  }
+}
+
 // ── Check open positions for exit triggers ────────────────────
 async function checkExits(): Promise<void> {
   const state = loadState();
@@ -67,13 +90,36 @@ async function checkExits(): Promise<void> {
       console.log(`   ⚠️  Cannot resolve token ID for: ${pos.question.slice(0, 50)}`);
       continue;
     }
-    // Patch in-memory so future iterations skip the lookup
     if (!pos.token_id) pos.token_id = tokenId;
     if (!pos.shares)   pos.shares   = pos.size_usdc / pos.entry_price;
 
     const currentPrice = await getMarketPrice(tokenId);
-    if (currentPrice === null) continue;
 
+    // ── Market resolved (no order book) ──────────────────────
+    if (currentPrice === null) {
+      const { resolved, won, exitPrice } = await checkResolution(pos);
+      if (!resolved) {
+        console.log(`   ⚠️  No price for ${pos.question.slice(0, 50)} — skipping`);
+        continue;
+      }
+      const pnlUsdc  = won
+        ? pos.shares * (1 - pos.entry_price)   // full payout minus cost
+        : -pos.size_usdc;                       // lost entire stake
+      const freshState = loadState();
+      recordClose(freshState, pos.id, exitPrice, 'resolved');
+      const resultEmoji = won ? '✅ WON' : '❌ LOST';
+      console.log(`   ${resultEmoji}: ${pos.question.slice(0, 55)} | PnL: $${pnlUsdc.toFixed(2)}`);
+      await sendMessage(
+        `${won ? '✅' : '❌'} <b>MARKET RESOLVED — ${won ? 'WIN' : 'LOSS'}</b>\n` +
+        `<b>Market:</b> ${pos.question.slice(0, 80)}\n` +
+        `<b>Side:</b> ${pos.side} | Entry: ${(pos.entry_price*100).toFixed(0)}¢\n` +
+        `<b>Result:</b> ${won ? 'Resolved YES' : 'Resolved NO'}\n` +
+        `<b>PnL: ${pnlUsdc >= 0 ? '+' : ''}$${pnlUsdc.toFixed(2)} USDC</b>`
+      );
+      continue;
+    }
+
+    // ── Still live — check take-profit / stop-loss ────────────
     const pnlPct       = ((currentPrice - pos.entry_price) / pos.entry_price * 100).toFixed(1);
     const overFair     = currentPrice - pos.fair_prob;
     const isStopLoss   = currentPrice < pos.entry_price * EXIT_STOP_LOSS_FRAC;
@@ -89,24 +135,24 @@ async function checkExits(): Promise<void> {
 
     console.log(`   🚨 ${isTakeProfit ? 'TAKE PROFIT' : 'STOP LOSS'}: ${reason}`);
 
-    const result = await sellPosition(tokenId, pos.shares, currentPrice * 0.9);
-    if (!result) continue;
+    const sellResult = await sellPosition(tokenId, pos.shares, currentPrice * 0.9);
+    if (!sellResult) continue;
 
-    const pnlUsdc = (result.price - pos.entry_price) * pos.shares;
+    const pnlUsdc = (sellResult.price - pos.entry_price) * pos.shares;
     const freshState = loadState();
-    recordClose(freshState, pos.id, result.price, result.orderId);
+    recordClose(freshState, pos.id, sellResult.price, sellResult.orderId);
 
     await sendExitAlert(
       pos.question,
       pos.side,
       pos.entry_price,
-      result.price,
+      sellResult.price,
       pos.shares,
       pnlUsdc,
       reason,
     );
 
-    console.log(`   ✅ Sold ${pos.shares.toFixed(1)} shares @ ${(result.price*100).toFixed(0)}¢ | PnL: $${pnlUsdc.toFixed(2)}`);
+    console.log(`   ✅ Sold ${pos.shares.toFixed(1)} shares @ ${(sellResult.price*100).toFixed(0)}¢ | PnL: $${pnlUsdc.toFixed(2)}`);
   }
 }
 
