@@ -15,6 +15,7 @@ import { priceMarket } from '../pricer';
 import { checkRisk, loadState, recordOpen, recordClose, printRiskSummary } from '../risk';
 import { placeOrder, sellPosition, getTokenIdFromMarket, getMarketPrice } from '../executor';
 import { sendTradeAlert, sendExecutionConfirm, sendExitAlert, sendMessage } from '../alerts/telegram';
+import axios from 'axios';
 import { Position, PolymarketMarket, PricerResult } from '../types';
 import { startControlServer } from '../control';
 import { queueTrade, startApprovalPoller, stopApprovalPoller } from '../approvals';
@@ -34,18 +35,43 @@ function shouldAutoExecute(result: PricerResult, sizeUsdc: number): boolean {
   );
 }
 
+// ── Look up token ID from Gamma when not stored (legacy positions) ────
+async function resolveTokenId(pos: Position): Promise<string | null> {
+  if (pos.token_id) return pos.token_id;
+  try {
+    const r = await axios.get('https://gamma-api.polymarket.com/markets', {
+      params: { conditionId: pos.market_id },
+      timeout: 8_000,
+    });
+    const m = r.data?.[0];
+    if (!m) return null;
+    const tokenIds = JSON.parse(m.clobTokenIds || '[]');
+    const outcomes = JSON.parse(m.outcomes     || '[]');
+    const idx = outcomes.findIndex((o: string) => o.toLowerCase() === pos.side.toLowerCase());
+    return idx >= 0 ? tokenIds[idx] : null;
+  } catch { return null; }
+}
+
 // ── Check open positions for exit triggers ────────────────────
 async function checkExits(): Promise<void> {
   const state = loadState();
-  const open  = state.open_positions.filter(p => p.status === 'open' && p.token_id);
+  const open  = state.open_positions.filter(p => p.status === 'open');
   if (!open.length) return;
 
   console.log(`\n🔍 Checking ${open.length} open position(s) for exit signals...`);
 
   for (const pos of open) {
-    if (!pos.token_id) continue;
+    // Resolve token_id — may be missing on positions created before this update
+    const tokenId = await resolveTokenId(pos);
+    if (!tokenId) {
+      console.log(`   ⚠️  Cannot resolve token ID for: ${pos.question.slice(0, 50)}`);
+      continue;
+    }
+    // Patch in-memory so future iterations skip the lookup
+    if (!pos.token_id) pos.token_id = tokenId;
+    if (!pos.shares)   pos.shares   = pos.size_usdc / pos.entry_price;
 
-    const currentPrice = await getMarketPrice(pos.token_id);
+    const currentPrice = await getMarketPrice(tokenId);
     if (currentPrice === null) continue;
 
     const pnlPct       = ((currentPrice - pos.entry_price) / pos.entry_price * 100).toFixed(1);
@@ -63,7 +89,7 @@ async function checkExits(): Promise<void> {
 
     console.log(`   🚨 ${isTakeProfit ? 'TAKE PROFIT' : 'STOP LOSS'}: ${reason}`);
 
-    const result = await sellPosition(pos.token_id, pos.shares, currentPrice * 0.9);
+    const result = await sellPosition(tokenId, pos.shares, currentPrice * 0.9);
     if (!result) continue;
 
     const pnlUsdc = (result.price - pos.entry_price) * pos.shares;
