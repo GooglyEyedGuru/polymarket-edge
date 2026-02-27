@@ -11,7 +11,7 @@
  */
 import axios from 'axios';
 import { TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } from './config';
-import { placeOrder } from './executor';
+import { placeOrder, getTokenIdFromMarket } from './executor';
 import { loadState, recordOpen } from './risk';
 import { sendExecutionConfirm, sendMessage } from './alerts/telegram';
 import { PricerResult, PolymarketMarket, Position } from './types';
@@ -109,12 +109,16 @@ async function handleCommand(text: string): Promise<void> {
 
     if (order && order.txHash !== 'error') {
       const state    = loadState();
+      const tokenId  = getTokenIdFromMarket(trade.market, trade.result.side as 'Yes' | 'No') ?? '';
+      const shares   = sizeUsdc / trade.result.implied_prob;
       const position: Position = {
         id:          `${trade.market.condition_id}-${Date.now()}`,
         market_id:   trade.market.condition_id,
         question:    trade.market.question,
         side:        trade.result.side as 'Yes' | 'No',
         size_usdc:   sizeUsdc,
+        shares,
+        token_id:    tokenId,
         entry_price: trade.result.implied_prob,
         fair_prob:   trade.result.fair_prob,
         edge_pct:    trade.result.edge_percent,
