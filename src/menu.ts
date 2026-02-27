@@ -101,35 +101,59 @@ export async function buildMenuPayload(): Promise<{
     text += '📭 No open positions.\n';
   } else {
     for (let i = 0; i < open.length; i++) {
-      const pos  = open[i];
-      const now  = await resolvePrice(pos);
+      const pos    = open[i];
+      const now    = await resolvePrice(pos);
       const shares = pos.shares || (pos.size_usdc / pos.entry_price);
 
-      let pnlStr  = '—';
-      let nowStr  = '?¢';
-      if (now !== null) {
-        const pnl  = (now - pos.entry_price) * shares;
-        const pct  = ((now - pos.entry_price) / pos.entry_price * 100).toFixed(0);
-        pnlStr     = `${pnl >= 0 ? '🟢 +' : '🔴 '}$${pnl.toFixed(2)} (${pct}%)`;
-        nowStr     = `${(now * 100).toFixed(0)}¢`;
-      }
-
-      // Also get best bid (what we'd actually receive on a sell)
-      let bidStr = '';
+      // ── Fetch best bid (actual sell price) ──────────────
+      let bestBid: number | null = null;
       if (pos.token_id) {
         try {
-          const book   = await getMarketPrice(pos.token_id);  // reuse for bid approximation
           const bidRes = await axios.get('https://clob.polymarket.com/book', {
             params: { token_id: pos.token_id }, timeout: 5_000,
           });
-          const bestBid = bidRes.data?.bids?.[0]?.price;
-          if (bestBid) bidStr = ` | Sell: ${(Number(bestBid)*100).toFixed(0)}¢`;
+          const raw = bidRes.data?.bids?.[0]?.price;
+          if (raw != null) bestBid = Number(raw);
         } catch {}
       }
 
-      text += `<b>${i + 1}. ${pos.question.slice(0, 58)}</b>\n`;
-      text += `   ${pos.side} | Entry: ${(pos.entry_price * 100).toFixed(0)}¢ | Mid: ${nowStr}${bidStr}\n`;
-      text += `   Shares: ${shares.toFixed(1)} | Cost: $${pos.size_usdc.toFixed(2)} | ${pnlStr}\n\n`;
+      // ── Liquidity flag ────────────────────────────────────
+      // A market is illiquid when the best bid is ≤1¢ (you'd get ~nothing on close)
+      const ILLIQUID_THRESHOLD = 0.01;
+      const isIlliquid = bestBid === null || bestBid <= ILLIQUID_THRESHOLD;
+
+      // ── Close value: what you'd actually receive selling now ─
+      const closeValue = bestBid !== null ? bestBid * shares : 0;
+
+      // ── Mid P&L: paper gain/loss vs entry (NOT realizable on illiquid markets) ─
+      let midPnlStr = '—';
+      let midStr    = '?¢';
+      if (now !== null) {
+        const midPnl = (now - pos.entry_price) * shares;
+        const midPct = ((now - pos.entry_price) / pos.entry_price * 100).toFixed(0);
+        // Only show green if there's actual liquidity to capture it
+        const midIcon = !isIlliquid && midPnl >= 0 ? '🟢' : midPnl >= 0 ? '📊' : '🔴';
+        midPnlStr     = `${midIcon} ${midPnl >= 0 ? '+' : ''}$${midPnl.toFixed(2)} (${midPct}%)`;
+        midStr        = `${(now * 100).toFixed(0)}¢`;
+      }
+
+      const bidStr  = bestBid !== null ? `${(bestBid * 100).toFixed(0)}¢` : '—';
+      const illiquidBadge = isIlliquid ? ' ⚠️ ILLIQUID' : '';
+
+      text += `<b>${i + 1}. ${pos.question.slice(0, 55)}${illiquidBadge}</b>\n`;
+      text += `   ${pos.side} | Entry: ${(pos.entry_price * 100).toFixed(0)}¢ | Mid: ${midStr} | Sell: ${bidStr}\n`;
+      text += `   Shares: ${shares.toFixed(1)} | Cost: $${pos.size_usdc.toFixed(2)}\n`;
+
+      if (isIlliquid) {
+        // Illiquid: show close value prominently so user knows what "close" actually pays
+        text += `   💰 Close gets: ~$${closeValue.toFixed(2)}  |  📊 Mid P&L: ${midPnlStr} <i>(unrealised)</i>\n\n`;
+      } else {
+        // Liquid: close value is meaningful — show it as the real P&L
+        const realPnl    = closeValue - pos.size_usdc;
+        const realPnlPct = (realPnl / pos.size_usdc * 100).toFixed(0);
+        const realIcon   = realPnl >= 0 ? '🟢' : '🔴';
+        text += `   ${realIcon} Close gets: $${closeValue.toFixed(2)} (${realPnl >= 0 ? '+' : ''}${realPnlPct}%)  |  Mid: ${midPnlStr}\n\n`;
+      }
 
       keyboard.push([
         { text: `❌ Close #${i + 1}`, callback_data: `cl:${i}` },
