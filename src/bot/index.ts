@@ -60,17 +60,23 @@ async function checkResolution(pos: Position): Promise<{ resolved: boolean; won:
       timeout: 8_000,
     });
     const m = r.data?.[0];
-    if (!m) return { resolved: false, won: false, exitPrice: 0 };
+    if (!m) {
+      console.log(`   🔎 Gamma returned no market for conditionId: ${pos.market_id}`);
+      return { resolved: false, won: false, exitPrice: 0 };
+    }
+
+    console.log(`   🔎 Gamma: closed=${m.closed} resolved=${m.resolved} question="${m.question?.slice(0,50)}"`);
 
     const resolved   = !!m.resolved || !!m.closed;
-    const outcomes   = JSON.parse(m.outcomes     || '[]');
-    const tokenIds   = JSON.parse(m.clobTokenIds || '[]');
-    const prices     = JSON.parse(m.outcomePrices || '[]');
+    const outcomes   = JSON.parse(m.outcomes      || '[]');
+    const prices     = JSON.parse(m.outcomePrices  || '[]');
     const idx        = outcomes.findIndex((o: string) => o.toLowerCase() === pos.side.toLowerCase());
     const exitPrice  = idx >= 0 ? Number(prices[idx] ?? 0) : 0;
     const won        = exitPrice >= 0.99;   // resolved Yes = price snaps to 1.0
+    console.log(`   🔎 outcome idx=${idx} price=${exitPrice} won=${won}`);
     return { resolved, won, exitPrice };
-  } catch {
+  } catch (e: any) {
+    console.log(`   🔎 checkResolution error: ${e.message}`);
     return { resolved: false, won: false, exitPrice: 0 };
   }
 }
