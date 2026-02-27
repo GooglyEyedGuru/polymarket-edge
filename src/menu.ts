@@ -180,8 +180,13 @@ export async function refreshMenu(messageId: number): Promise<void> {
       ...payload,
     }, { timeout: 10_000 });
   } catch (e: any) {
-    if (!e.message?.includes('message is not modified')) {
-      console.error('refreshMenu error:', e.message);
+    const msg = e.response?.data?.description ?? e.message ?? '';
+    // Stale/invalid message ID — send a fresh menu instead
+    if (msg.includes('message is not modified')) return;  // no change, fine
+    if (msg.includes('message to edit not found') || e.response?.status === 400) {
+      await sendMenu();  // fall back to a new message
+    } else {
+      console.error('refreshMenu error:', msg);
     }
   }
 }
