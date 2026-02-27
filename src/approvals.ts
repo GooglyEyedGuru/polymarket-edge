@@ -14,6 +14,7 @@ import { TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } from './config';
 import { placeOrder, getTokenIdFromMarket } from './executor';
 import { loadState, recordOpen } from './risk';
 import { sendExecutionConfirm, sendMessage } from './alerts/telegram';
+import { sendMenu, handleCallback } from './menu';
 import { PricerResult, PolymarketMarket, Position } from './types';
 
 const BASE = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
@@ -55,19 +56,32 @@ async function poll(): Promise<void> {
 
   try {
     const res = await axios.get(`${BASE}/getUpdates`, {
-      params: { offset: lastUpdateId + 1, timeout: 5, allowed_updates: ['message'] },
+      params: { offset: lastUpdateId + 1, timeout: 5, allowed_updates: ['message', 'callback_query'] },
       timeout: 10_000,
     });
 
     for (const update of res.data.result ?? []) {
       lastUpdateId = update.update_id;
-      const text = update.message?.text?.trim().toLowerCase() ?? '';
-      const chatId = String(update.message?.chat?.id ?? '');
 
-      // Only handle messages from the authorised chat
+      // ── Inline button press ───────────────────────────────
+      if (update.callback_query) {
+        const cq     = update.callback_query;
+        const chatId = String(cq.message?.chat?.id ?? '');
+        if (chatId !== TELEGRAM_CHAT_ID) continue;
+        await handleCallback(cq.id, cq.data ?? '', cq.message?.message_id ?? 0);
+        continue;
+      }
+
+      // ── Text message ──────────────────────────────────────
+      const text   = update.message?.text?.trim().toLowerCase() ?? '';
+      const chatId = String(update.message?.chat?.id ?? '');
       if (chatId !== TELEGRAM_CHAT_ID) continue;
 
-      await handleCommand(text);
+      if (text === '/menu' || text === 'menu') {
+        await sendMenu();
+      } else {
+        await handleCommand(text);
+      }
     }
   } catch { /* network blip — keep polling */ }
 
