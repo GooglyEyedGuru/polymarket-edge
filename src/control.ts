@@ -33,6 +33,15 @@ export function startControlServer(onShutdown: ShutdownCallback): void {
     }
   });
 
+  _server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      console.warn('⚠️  Control server port 3001 already in use — skipping (bot will run without it)');
+      _server = null;
+    } else {
+      console.error('⚠️  Control server error:', err.message);
+    }
+  });
+
   _server.listen(3001, '127.0.0.1', () => {
     console.log('🎮 Control server: http://localhost:3001');
   });
