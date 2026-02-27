@@ -62,9 +62,16 @@ export function checkRisk(
   }
 
   // Max concurrent positions
-  const openCount = state.open_positions.filter(p => p.status === 'open').length;
+  const openPositions = state.open_positions.filter(p => p.status === 'open');
+  const openCount = openPositions.length;
   if (openCount >= MAX_CONCURRENT_POSITIONS) {
     return { allowed: false, reason: `Max concurrent positions reached (${MAX_CONCURRENT_POSITIONS})`, sizeUsdc: 0 };
+  }
+
+  // No duplicate markets — already have a position in this market
+  const alreadyOpen = openPositions.some(p => p.market_id === result.market_id);
+  if (alreadyOpen) {
+    return { allowed: false, reason: `Already have an open position in this market`, sizeUsdc: 0 };
   }
 
   // Total exposure cap
